@@ -131,7 +131,7 @@ def handle_message(event):
 
     # ⏱ 手動時間
     elif len(msg.split()) == 2:
-    try:
+        try:
         time_part, boss_id = msg.split()
 
         # ✅ 支援 4碼（HHMM）或 6碼（HHMMSS）
