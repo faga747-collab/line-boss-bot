@@ -8,8 +8,10 @@ import sqlite3
 
 app = Flask(__name__)
 
-line_bot_api = LineBotApi('YOUR_CHANNEL_ACCESS_TOKEN')
-handler = WebhookHandler('YOUR_CHANNEL_SECRET')
+import os
+
+line_bot_api = LineBotApi(os.getenv('YOUR_CHANNEL_ACCESS_TOKEN'))
+handler = WebhookHandler(os.getenv('YOUR_CHANNEL_SECRET'))
 
 tz = pytz.timezone('Asia/Taipei')
 
