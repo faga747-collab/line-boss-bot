@@ -130,25 +130,41 @@ def handle_message(event):
             reply = "格式：6666 王ID"
 
     # ⏱ 手動時間
-    elif ":" in msg:
-        try:
-            time_part, boss_id = msg.split()
+    elif len(msg.split()) == 2:
+    try:
+        time_part, boss_id = msg.split()
 
+        # ✅ 支援 4碼（HHMM）或 6碼（HHMMSS）
+        if not time_part.isdigit() or len(time_part) not in [4, 6]:
+            return
+
+        hour = int(time_part[:2])
+        minute = int(time_part[2:4])
+        second = int(time_part[4:6]) if len(time_part) == 6 else 0
+
+        # 防呆
+        if hour > 23 or minute > 59 or second > 59:
+            reply = "時間格式錯誤"
+        else:
             cursor.execute("SELECT id FROM bosses WHERE id=?", (boss_id,))
             if not cursor.fetchone():
                 reply = "此王尚未設定"
             else:
-                kill_time = datetime.strptime(time_part, "%H:%M")
-                kill_time = tz.localize(kill_time.replace(
+                kill_time = datetime(
                     year=now.year,
                     month=now.month,
-                    day=now.day
-                ))
+                    day=now.day,
+                    hour=hour,
+                    minute=minute,
+                    second=second,
+                    tzinfo=tz
+                )
 
                 record_kill(boss_id, kill_time)
-                reply = f"{boss_id} 已記錄 💀（{time_part}）"
-        except:
-            reply = "格式：HH:MM 王ID"
+                reply = f"{boss_id} 已記錄 💀（{hour:02}:{minute:02}:{second:02}）"
+
+    except:
+        reply = "格式：2136 或 213645 王ID"
 
     else:
         return
