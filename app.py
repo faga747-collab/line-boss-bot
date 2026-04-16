@@ -10,8 +10,8 @@ app = Flask(__name__)
 
 import os
 
-line_bot_api = LineBotApi(os.getenv('YOUR_CHANNEL_ACCESS_TOKEN'))
-handler = WebhookHandler(os.getenv('YOUR_CHANNEL_SECRET'))
+line_bot_api = LineBotApi(os.getenv('CHANNEL_ACCESS_TOKEN'))
+handler = WebhookHandler(os.getenv('CHANNEL_SECRET'))
 
 tz = pytz.timezone('Asia/Taipei')
 
@@ -144,4 +144,5 @@ def handle_message(event):
 
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
