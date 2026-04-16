@@ -76,43 +76,30 @@ def handle_message(event):
 
     # 📋 列表
     elif msg == "出":
-        cursor.execute("SELECT id, respawn, last_kill FROM bosses")
-        rows = cursor.fetchall()
+    cursor.execute("SELECT id, respawn, last_kill FROM bosses")
+    rows = cursor.fetchall()
 
-        if not rows:
-            reply = "沒有任何王"
-        else:
-            result = []
-
-            for boss_id, respawn, last_kill in rows:
-                if last_kill:
-                    last = datetime.fromisoformat(last_kill)
-                    respawn_time = last + timedelta(minutes=respawn)
-                    remaining = respawn_time - now
-
-                    if remaining.total_seconds() <= 0:
-                        status = "已重生🔥"
-                    else:
-                        for boss_id, respawn, last_kill in rows:
-    if last_kill:
-        last = datetime.fromisoformat(last_kill)
-        respawn_time = last + timedelta(minutes=respawn)
-
-        if respawn_time <= now:
-            status = "已重生🔥"
-        else:
-            status = respawn_time.strftime("%H:%M")  # ⭐ 顯示時間
-
+    if not rows:
+        reply = "沒有任何王"
     else:
-        status = "未記錄"
+        result = []
 
-    result.append(f"{boss_id}｜{status}"
+        for boss_id, respawn, last_kill in rows:
+            if last_kill:
+                last = datetime.fromisoformat(last_kill)
+                respawn_time = last + timedelta(minutes=respawn)
+
+                if respawn_time <= now:
+                    status = "已重生🔥"
                 else:
-                    status = "未記錄"
+                    status = respawn_time.strftime("%H:%M")
 
-                result.append(f"{boss_id}｜{status}")
+            else:
+                status = "未記錄"
 
-            reply = "📋 王表\n" + "\n".join(result)
+            result.append(f"{boss_id}｜{status}")
+
+        reply = "📋 王表\n" + "\n".join(result)
 
     # 💀 現在死亡
     elif msg.startswith("6666"):
