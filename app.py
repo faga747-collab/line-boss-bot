@@ -74,84 +74,90 @@ def handle_message(event):
         except:
             reply = "格式：設定 王ID 分鐘"
 
-if msg == "出":
-    cursor.execute("SELECT id, respawn, last_kill FROM bosses")
-    rows = cursor.fetchall()
+    # 📋 出王表
+    elif msg == "出":
+        cursor.execute("SELECT id, respawn, last_kill FROM bosses")
+        rows = cursor.fetchall()
 
-    if not rows:
-        reply = "沒有任何王"
+        if not rows:
+            reply = "沒有任何王"
+        else:
+            now_list = []
+            future_list = []
+
+            for boss_id, respawn, last_kill in rows:
+                if not last_kill:
+                    continue
+
+                last = datetime.fromisoformat(last_kill)
+                respawn_time = last + timedelta(minutes=respawn)
+
+                diff = (now - respawn_time).total_seconds()
+
+                if 0 <= diff <= 1800:
+                    time_str = respawn_time.strftime("%H:%M")
+                    now_list.append((respawn_time, f"{time_str}  {boss_id}"))
+
+                elif respawn_time > now:
+                    time_str = respawn_time.strftime("%H:%M")
+                    future_list.append((respawn_time, f"{time_str}  {boss_id}"))
+
+            now_list.sort(key=lambda x: x[0])
+            future_list.sort(key=lambda x: x[0])
+
+            text = ["📋 王表", "時間    王名稱", "----------------"]
+
+            for _, line in now_list:
+                text.append(line)
+
+            for _, line in future_list:
+                text.append(line)
+
+            reply = "\n".join(text)
+
+    # 💀 現在死亡
+    elif msg.startswith("6666"):
+        try:
+            _, boss_id = msg.split()
+
+            cursor.execute("SELECT id FROM bosses WHERE id=?", (boss_id,))
+            if not cursor.fetchone():
+                reply = "此王尚未設定"
+            else:
+                record_kill(boss_id, now)
+                reply = f"{boss_id} 已記錄 💀（現在）"
+        except:
+            reply = "格式：6666 王ID"
+
+    # ⏱ 手動時間
+    elif ":" in msg:
+        try:
+            time_part, boss_id = msg.split()
+
+            cursor.execute("SELECT id FROM bosses WHERE id=?", (boss_id,))
+            if not cursor.fetchone():
+                reply = "此王尚未設定"
+            else:
+                kill_time = datetime.strptime(time_part, "%H:%M")
+                kill_time = tz.localize(kill_time.replace(
+                    year=now.year,
+                    month=now.month,
+                    day=now.day
+                ))
+
+                record_kill(boss_id, kill_time)
+                reply = f"{boss_id} 已記錄 💀（{time_part}）"
+        except:
+            reply = "格式：HH:MM 王ID"
+
     else:
-        now_list = []
-        future_list = []
+        return
 
-        for boss_id, respawn, last_kill in rows:
-            if not last_kill:
-                continue
-
-            last = datetime.fromisoformat(last_kill)
-            respawn_time = last + timedelta(minutes=respawn)
-
-            diff = (now - respawn_time).total_seconds()
-
-            if 0 <= diff <= 1800:
-                time_str = respawn_time.strftime("%H:%M")
-                now_list.append((respawn_time, f"{time_str}  {boss_id}"))
-
-            elif respawn_time > now:
-                time_str = respawn_time.strftime("%H:%M")
-                future_list.append((respawn_time, f"{time_str}  {boss_id}"))
-
-        now_list.sort(key=lambda x: x[0])
-        future_list.sort(key=lambda x: x[0])
-
-        text = ["📋 王表", "時間    王名稱", "----------------"]
-
-        for _, line in now_list:
-            text.append(line)
-
-        for _, line in future_list:
-            text.append(line)
-
-        reply = "\n".join(text)
-
-
-elif msg.startswith("6666"):
-    try:
-        _, boss_id = msg.split()
-
-        cursor.execute("SELECT id FROM bosses WHERE id=?", (boss_id,))
-        if not cursor.fetchone():
-            reply = "此王尚未設定"
-        else:
-            record_kill(boss_id, now)
-            reply = f"{boss_id} 已記錄 💀（現在）"
-    except:
-        reply = "格式：6666 王ID"
-
-
-elif ":" in msg:
-    try:
-        time_part, boss_id = msg.split()
-
-        cursor.execute("SELECT id FROM bosses WHERE id=?", (boss_id,))
-        if not cursor.fetchone():
-            reply = "此王尚未設定"
-        else:
-            kill_time = datetime.strptime(time_part, "%H:%M")
-            kill_time = tz.localize(kill_time.replace(
-                year=now.year,
-                month=now.month,
-                day=now.day
-            ))
-
-            record_kill(boss_id, kill_time)
-            reply = f"{boss_id} 已記錄 💀（{time_part}）"
-    except:
-        reply = "格式：HH:MM 王ID"
-
-
-else:
-    return
+    # ✅ 回覆 LINE
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=reply)
+    )
 
 
 if __name__ == "__main__":
