@@ -167,7 +167,7 @@ elif len(msg.split()) == 2:
         reply = "格式：2136 或 213645 王ID"
 
 else:
-        return
+    return
 
     # ✅ 回覆 LINE
     line_bot_api.reply_message(
