@@ -92,12 +92,12 @@ def handle_message(event):
 
                 # 🔥 已重生30分鐘內（放上面）
                 if 0 <= diff <= 1800:
-                    time_str = respawn_time.strftime("%H:%M")
+                    time_str = respawn_time.strftime("%H:%M:%S")
                     now_list.append((respawn_time, f"{time_str}  {boss_id}"))
 
                 # ⏱ 未來時間
                 elif respawn_time > now:
-                    time_str = respawn_time.strftime("%H:%M")
+                    time_str = respawn_time.strftime("%H:%M:%S")
                     future_list.append((respawn_time, f"{time_str}  {boss_id}"))
 
             now_list.sort(key=lambda x: x[0])
