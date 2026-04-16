@@ -5,16 +5,12 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from datetime import datetime, timedelta
 import pytz
 import sqlite3
+import os
 
 app = Flask(__name__)
 
-import os
-
 line_bot_api = LineBotApi(os.getenv('CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('CHANNEL_SECRET'))
-
-print("TOKEN:", os.getenv("CHANNEL_ACCESS_TOKEN"))
-print("SECRET:", os.getenv("CHANNEL_SECRET"))
 
 tz = pytz.timezone('Asia/Taipei')
 
@@ -94,10 +90,12 @@ def handle_message(event):
 
                 diff = (now - respawn_time).total_seconds()
 
+                # 🔥 已重生30分鐘內（放上面）
                 if 0 <= diff <= 1800:
                     time_str = respawn_time.strftime("%H:%M")
                     now_list.append((respawn_time, f"{time_str}  {boss_id}"))
 
+                # ⏱ 未來時間
                 elif respawn_time > now:
                     time_str = respawn_time.strftime("%H:%M")
                     future_list.append((respawn_time, f"{time_str}  {boss_id}"))
@@ -126,47 +124,47 @@ def handle_message(event):
             else:
                 record_kill(boss_id, now)
                 reply = f"{boss_id} 已記錄 💀（現在）"
+
         except:
             reply = "格式：6666 王ID"
 
-# ⏱ 手動時間
-elif len(msg.split()) == 2:
-    try:
-        time_part, boss_id = msg.split()
+    # ⏱ 手動時間（支援 2136 / 213645）
+    elif len(msg.split()) == 2:
+        try:
+            time_part, boss_id = msg.split()
 
-        if not time_part.isdigit() or len(time_part) not in [4, 6]:
-            return
+            if not time_part.isdigit() or len(time_part) not in [4, 6]:
+                return
 
-        hour = int(time_part[:2])
-        minute = int(time_part[2:4])
-        second = int(time_part[4:6]) if len(time_part) == 6 else 0
+            hour = int(time_part[:2])
+            minute = int(time_part[2:4])
+            second = int(time_part[4:6]) if len(time_part) == 6 else 0
 
-        if hour > 23 or minute > 59 or second > 59:
-            reply = "時間格式錯誤"
-        else:
-            cursor.execute("SELECT id FROM bosses WHERE id=?", (boss_id,))
-            if not cursor.fetchone():
-                reply = "此王尚未設定"
+            if hour > 23 or minute > 59 or second > 59:
+                reply = "時間格式錯誤"
             else:
-                kill_time = datetime(
-                    year=now.year,
-                    month=now.month,
-                    day=now.day,
-                    hour=hour,
-                    minute=minute,
-                    second=second,
-                    tzinfo=tz
-                )
+                cursor.execute("SELECT id FROM bosses WHERE id=?", (boss_id,))
+                if not cursor.fetchone():
+                    reply = "此王尚未設定"
+                else:
+                    kill_time = datetime(
+                        year=now.year,
+                        month=now.month,
+                        day=now.day,
+                        hour=hour,
+                        minute=minute,
+                        second=second,
+                        tzinfo=tz
+                    )
 
-                record_kill(boss_id, kill_time)
-                reply = f"{boss_id} 已記錄 💀（{hour:02}:{minute:02}:{second:02}）"
+                    record_kill(boss_id, kill_time)
+                    reply = f"{boss_id} 已記錄 💀（{hour:02}:{minute:02}:{second:02}）"
 
-    except:
-        reply = "格式：2136 或 213645 王ID"
+        except:
+            reply = "格式：2136 或 213645 王ID"
 
-# ❗這個要在最外層
-else:
-    return
+    else:
+        return
 
     # ✅ 回覆 LINE
     line_bot_api.reply_message(
