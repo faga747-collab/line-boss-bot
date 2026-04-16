@@ -134,7 +134,6 @@ elif len(msg.split()) == 2:
     try:
         time_part, boss_id = msg.split()
 
-        # ✅ 支援 4碼（HHMM）或 6碼（HHMMSS）
         if not time_part.isdigit() or len(time_part) not in [4, 6]:
             return
 
@@ -142,7 +141,6 @@ elif len(msg.split()) == 2:
         minute = int(time_part[2:4])
         second = int(time_part[4:6]) if len(time_part) == 6 else 0
 
-        # 防呆
         if hour > 23 or minute > 59 or second > 59:
             reply = "時間格式錯誤"
         else:
@@ -166,6 +164,7 @@ elif len(msg.split()) == 2:
     except:
         reply = "格式：2136 或 213645 王ID"
 
+# ❗這個要在最外層
 else:
     return
 
