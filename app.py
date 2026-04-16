@@ -13,6 +13,9 @@ import os
 line_bot_api = LineBotApi(os.getenv('CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('CHANNEL_SECRET'))
 
+print("TOKEN:", os.getenv("CHANNEL_ACCESS_TOKEN"))
+print("SECRET:", os.getenv("CHANNEL_SECRET"))
+
 tz = pytz.timezone('Asia/Taipei')
 
 # 📦 資料庫
