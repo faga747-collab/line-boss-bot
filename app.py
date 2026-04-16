@@ -129,9 +129,9 @@ def handle_message(event):
         except:
             reply = "格式：6666 王ID"
 
-    # ⏱ 手動時間
-    elif len(msg.split()) == 2:
-        try:
+     # ⏱ 手動時間
+elif len(msg.split()) == 2:
+    try:
         time_part, boss_id = msg.split()
 
         # ✅ 支援 4碼（HHMM）或 6碼（HHMMSS）
