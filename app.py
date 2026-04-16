@@ -166,7 +166,7 @@ elif len(msg.split()) == 2:
     except:
         reply = "格式：2136 或 213645 王ID"
 
-    else:
+else:
         return
 
     # ✅ 回覆 LINE
