@@ -93,8 +93,20 @@ def handle_message(event):
                     if remaining.total_seconds() <= 0:
                         status = "已重生🔥"
                     else:
-                        mins = int(remaining.total_seconds() // 60)
-                        status = f"{mins}分"
+                        for boss_id, respawn, last_kill in rows:
+    if last_kill:
+        last = datetime.fromisoformat(last_kill)
+        respawn_time = last + timedelta(minutes=respawn)
+
+        if respawn_time <= now:
+            status = "已重生🔥"
+        else:
+            status = respawn_time.strftime("%H:%M")  # ⭐ 顯示時間
+
+    else:
+        status = "未記錄"
+
+    result.append(f"{boss_id}｜{status}"
                 else:
                     status = "未記錄"
 
