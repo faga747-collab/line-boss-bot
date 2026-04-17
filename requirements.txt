@@ -1,4 +1,0 @@
-flask
-line-bot-sdk
-psycopg2-binary
-gunicorn
