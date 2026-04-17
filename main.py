@@ -45,6 +45,87 @@ CREATE TABLE IF NOT EXISTS aliases (
 
 conn.commit()
 
+# 🔥 預設王
+default_bosses = [
+    ("86下飛龍", 120*60), ("86上飛龍", 120*60), ("巨大蜈蚣", 120*60),
+    ("76四色", 120*60), ("伊佛利特", 120*60), ("54綠王", 120*60),
+    ("55紅王", 120*60),
+
+    ("大黑老", 180*60), ("83飛龍", 180*60), ("85飛龍", 180*60),
+    ("51鱷魚", 180*60), ("32強盜", 180*60), ("231樹精", 180*60),
+    ("賽尼斯", 180*60), ("69大腳", 180*60),
+
+    ("57奈克", 240*60), ("39蜘蛛", 240*60), ("05死騎", 240*60),
+
+    ("23烏勒", 360*60), ("81貝里斯", 360*60),
+    ("巨大飛龍", 360*60), ("象7", 360*60),
+
+    ("29螞蟻", 210*60), ("狼王", 480*60), ("卡王", 450*60),
+    ("變怪王", 420*60), ("不死鳥", 480*60),
+    ("78古巨", 510*60), ("12克特", 600*60),
+]
+
+# 🔥 預設別名（不限數量寫法）
+default_aliases = [
+    ("861", "86下飛龍"),
+    ("862", "86上飛龍"),
+    ("6", "巨大蜈蚣"),
+
+    ("76", "76四色", "四色"),
+    ("45", "伊佛利特", "EF"),
+    ("54", "54綠王", "綠"),
+    ("55", "55紅王", "紅"),
+
+    ("863", "大黑老", "大黑"),
+    ("83", "83飛龍"),
+    ("85", "85飛龍"),
+
+    ("51", "51鱷魚", "鱷魚"),
+    ("32", "32強盜", "強盜"),
+    ("231", "231樹精", "樹"),
+
+    ("304", "賽尼斯"),
+    ("69", "69大腳", "大腳"),
+
+    ("57", "57奈克"),
+    ("39", "39蜘蛛"),
+    ("5", "05死騎"),
+
+    ("23", "23烏勒"),
+    ("81", "81貝里斯"),
+    ("82", "巨大飛龍"),
+    ("7", "象7"),
+
+    ("29", "29螞蟻"),
+    ("狼", "狼王"),
+    ("卡", "卡王"),
+
+    ("61", "變怪王", "變怪"),
+    ("鳥", "不死鳥"),
+
+    ("78", "78古巨", "古巨"),
+    ("12", "12克特", "克特"),
+]
+
+# 🔥 寫入預設王（不覆蓋）
+for boss, respawn in default_bosses:
+    cursor.execute(
+        "INSERT OR IGNORE INTO bosses VALUES (?, ?, NULL, NULL)",
+        (boss, respawn)
+    )
+
+# 🔥 寫入別名（支援多別名）
+for row in default_aliases:
+    boss = row[1]  # 第二個是本名
+
+    for alias in row:
+        cursor.execute(
+            "INSERT OR IGNORE INTO aliases VALUES (?, ?)",
+            (alias, boss)
+        )
+
+conn.commit()
+
 # 找王
 def get_boss_id(name):
     cursor.execute("SELECT boss_id FROM aliases WHERE alias=?", (name,))
@@ -73,7 +154,6 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("❌ 簽名錯誤")
         abort(400)
     except Exception as e:
         print("🔥 錯誤:", e)
@@ -101,9 +181,16 @@ def handle_message(event):
 !add 王名 分鐘 別名
 !edit 王名 分鐘
 !del 王名
+!clear all 清除全部時間
 """
 
-    # 📋 查詢（🔥 時間排序）
+    # 🧹 清除全部時間
+    elif msg.lower() == "!clear all":
+        cursor.execute("UPDATE bosses SET last_kill=NULL, note=NULL")
+        conn.commit()
+        reply = "🧹 已清除所有王的時間"
+
+    # 📋 查詢
     elif msg == "出":
         cursor.execute("SELECT * FROM bosses")
         rows = cursor.fetchall()
@@ -120,7 +207,6 @@ def handle_message(event):
 
                 diff = (now - last_time).total_seconds()
                 count = int(diff // respawn)
-
                 if count < 0:
                     count = 0
 
@@ -128,23 +214,21 @@ def handle_message(event):
 
             boss_list.append((boss, respawn, last_kill, note, next_time, count))
 
-        # 🔥 只照時間排序
         boss_list.sort(key=lambda x: (x[4] is None, x[4]))
 
         reply = "📋 王表\n時間　　 王名稱\n----------------\n"
 
         for boss, respawn, last_kill, note, next_time, count in boss_list:
+            if not next_time:
+                continue
+
             note_text = f"｜{note}" if note else ""
+            time_str = next_time.strftime("%H:%M:%S")
 
-            if next_time:
-                time_str = next_time.strftime("%H:%M:%S")
-
-                if count == 0:
-                    reply += f"{time_str}　{boss}{note_text}\n"
-                else:
-                    reply += f"{time_str}　{boss}（過{count}）{note_text}\n"
+            if count == 0:
+                reply += f"{time_str}　{boss}{note_text}\n"
             else:
-                reply += f"--:--:--　{boss}\n"
+                reply += f"{time_str}　{boss}（過{count}）{note_text}\n"
 
     # 🟢 開服
     elif msg.lower().startswith("!open") and len(parts) == 2:
