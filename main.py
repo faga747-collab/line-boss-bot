@@ -8,7 +8,9 @@ from datetime import datetime, timedelta
 import pytz
 
 app = Flask(__name__)
-
+@app.route("/")
+def home():
+    return "OK"
 LINE_CHANNEL_ACCESS_TOKEN = "gdsj6TwRFERmBblRf/HvzltxF96+hBJtHei+v5HgW91EQTcoh/sDtv7JZHd7Kk9XZB84ziADfThuaMJzB/I4/xUYS6b79qB9OjskQknw5Ncf1dQxRzJXnHInwY9aCZIIuu1IjfXEOdFWXP6fARJUngdB04t89/1O/w1cDnyilFU="
 LINE_CHANNEL_SECRET = "fec2f3302c8532f6966618ffe12464c7"
 
