@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS aliases (
 
 conn.commit()
 
-# 🔥 預設王
+# 預設王
 default_bosses = [
     ("86下飛龍", 120*60), ("86上飛龍", 120*60), ("巨大蜈蚣", 120*60),
     ("76四色", 120*60), ("伊佛利特", 120*60), ("54綠王", 120*60),
@@ -65,59 +65,30 @@ default_bosses = [
     ("78古巨", 510*60), ("12克特", 600*60),
 ]
 
-# 🔥 預設別名（不限數量寫法）
 default_aliases = [
-    ("861", "86下飛龍"),
-    ("862", "86上飛龍"),
-    ("6", "巨大蜈蚣"),
-
-    ("76", "76四色", "四色"),
-    ("45", "伊佛利特", "EF"),
-    ("54", "54綠王", "綠"),
-    ("55", "55紅王", "紅"),
-
-    ("863", "大黑老", "大黑"),
-    ("83", "83飛龍"),
-    ("85", "85飛龍"),
-
-    ("51", "51鱷魚", "鱷魚"),
-    ("32", "32強盜", "強盜"),
-    ("231", "231樹精", "樹"),
-
-    ("304", "賽尼斯"),
+    ("861", "86下飛龍"), ("862", "86上飛龍"), ("6", "巨大蜈蚣"),
+    ("76", "76四色", "四色"), ("45", "伊佛利特", "EF"),
+    ("54", "54綠王", "綠"), ("55", "55紅王", "紅"),
+    ("863", "大黑老", "大黑"), ("83", "83飛龍"), ("85", "85飛龍"),
+    ("51", "51鱷魚", "鱷魚"), ("32", "32強盜", "強盜"),
+    ("231", "231樹精", "樹"), ("304", "賽尼斯"),
     ("69", "69大腳", "大腳"),
-
-    ("57", "57奈克"),
-    ("39", "39蜘蛛"),
-    ("5", "05死騎"),
-
-    ("23", "23烏勒"),
-    ("81", "81貝里斯"),
-    ("82", "巨大飛龍"),
-    ("7", "象7"),
-
-    ("29", "29螞蟻"),
-    ("狼", "狼王"),
-    ("卡", "卡王"),
-
-    ("61", "變怪王", "變怪"),
-    ("鳥", "不死鳥"),
-
-    ("78", "78古巨", "古巨"),
-    ("12", "12克特", "克特"),
+    ("57", "57奈克"), ("39", "39蜘蛛"), ("5", "05死騎"),
+    ("23", "23烏勒"), ("81", "81貝里斯"),
+    ("82", "巨大飛龍"), ("7", "象7"),
+    ("29", "29螞蟻"), ("狼", "狼王"), ("卡", "卡王"),
+    ("61", "變怪王", "變怪"), ("鳥", "不死鳥"),
+    ("78", "78古巨", "古巨"), ("12", "12克特", "克特"),
 ]
 
-# 🔥 寫入預設王（不覆蓋）
 for boss, respawn in default_bosses:
     cursor.execute(
         "INSERT OR IGNORE INTO bosses VALUES (?, ?, NULL, NULL)",
         (boss, respawn)
     )
 
-# 🔥 寫入別名（支援多別名）
 for row in default_aliases:
-    boss = row[1]  # 第二個是本名
-
+    boss = row[1]
     for alias in row:
         cursor.execute(
             "INSERT OR IGNORE INTO aliases VALUES (?, ?)",
@@ -126,7 +97,6 @@ for row in default_aliases:
 
 conn.commit()
 
-# 找王
 def get_boss_id(name):
     cursor.execute("SELECT boss_id FROM aliases WHERE alias=?", (name,))
     row = cursor.fetchone()
@@ -137,7 +107,6 @@ def get_boss_id(name):
     row = cursor.fetchone()
     return row[0] if row else None
 
-# 解析時間
 def parse_time(text):
     if text.isdigit():
         if len(text) == 6:
@@ -169,7 +138,7 @@ def handle_message(event):
 
     reply = None
 
-    # 📖 指令
+    # 指令
     if msg.lower() in ["查詢", "help"]:
         reply = """📖 指令
 
@@ -184,14 +153,15 @@ def handle_message(event):
 !clear all 清除全部時間
 """
 
-    # 🧹 清除全部時間
     elif msg.lower() == "!clear all":
         cursor.execute("UPDATE bosses SET last_kill=NULL, note=NULL")
         conn.commit()
         reply = "🧹 已清除所有王的時間"
 
-    # 📋 查詢
+    # ⭐ 查詢（含重點王🔥）
     elif msg == "出":
+        priority_bosses = ["不死鳥", "05死騎", "78古巨"]
+
         cursor.execute("SELECT * FROM bosses")
         rows = cursor.fetchall()
 
@@ -225,12 +195,13 @@ def handle_message(event):
             note_text = f"｜{note}" if note else ""
             time_str = next_time.strftime("%H:%M:%S")
 
-            if count == 0:
-                reply += f"{time_str}　{boss}{note_text}\n"
-            else:
-                reply += f"{time_str}　{boss}（過{count}）{note_text}\n"
+            icon = "🔥" if boss in priority_bosses else "　"
 
-    # 🟢 開服
+            if count == 0:
+                reply += f"{icon}{time_str}　{boss}{note_text}\n"
+            else:
+                reply += f"{icon}{time_str}　{boss}（過{count}）{note_text}\n"
+
     elif msg.lower().startswith("!open") and len(parts) == 2:
         time_str = parse_time(parts[1])
 
@@ -251,7 +222,6 @@ def handle_message(event):
         else:
             reply = "❌ 時間格式錯誤"
 
-    # ➕ 新增
     elif msg.lower().startswith("!add") and len(parts) >= 3:
         boss = parts[1]
         minutes = int(parts[2])
@@ -272,7 +242,6 @@ def handle_message(event):
         conn.commit()
         reply = f"✅ 新增 {boss}（{minutes}分）"
 
-    # ✏️ 修改
     elif msg.lower().startswith("!edit") and len(parts) == 3:
         boss = get_boss_id(parts[1])
 
@@ -290,7 +259,6 @@ def handle_message(event):
         else:
             reply = "❌ 找不到王"
 
-    # ❌ 刪除
     elif msg.lower().startswith("!del") and len(parts) == 2:
         boss = get_boss_id(parts[1])
 
@@ -303,7 +271,6 @@ def handle_message(event):
         else:
             reply = "❌ 找不到王"
 
-    # 💀 即時死亡
     elif parts and parts[0] == "6666" and len(parts) >= 2:
         boss = get_boss_id(parts[1])
 
@@ -321,7 +288,6 @@ def handle_message(event):
         else:
             reply = "❌ 找不到王"
 
-    # ⏱ 手動時間
     elif any(parse_time(p) for p in parts):
         boss = None
         time_str = None
@@ -362,7 +328,6 @@ def handle_message(event):
         else:
             reply = "❌ 格式錯誤或找不到王"
 
-    # 🔕 回覆
     if reply:
         line_bot_api.reply_message(
             event.reply_token,
