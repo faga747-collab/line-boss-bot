@@ -77,21 +77,20 @@ def handle_message(event):
     parts = msg.split()
     now = datetime.now(tz)
 
-    reply = None  # 🔥 預設不回
+    reply = None  # 🔥 不亂回
 
-    # 📖 指令說明
+    # 📖 指令
     if msg.lower() in ["查詢", "help"]:
         reply = """📖 指令
 
 查詢
 出
-0900 王名
-6666 王名
+0900 王名 備註
+6666 王名 備註
 !open 0900
 !add 王名 分鐘 別名
 !edit 王名 分鐘
 !del 王名
-!clear 王名 / all
 """
 
     # 📋 查詢
@@ -106,12 +105,14 @@ def handle_message(event):
                 last_time = datetime.strptime(last_kill, "%Y-%m-%d %H:%M:%S")
                 last_time = tz.localize(last_time)
 
-                count = 0
-                next_time = last_time + timedelta(seconds=respawn)
+                diff = (now - last_time).total_seconds()
+                count = int(diff // respawn)
 
-                while now > next_time:
-                    count += 1
-                    next_time += timedelta(seconds=respawn)
+                next_time = last_time + timedelta(seconds=(count + 1) * respawn)
+
+                # 🔥 修正：未來時間不顯示過X
+                if count < 0:
+                    count = 0
 
                 time_str = next_time.strftime("%H:%M:%S")
                 note_text = f"｜{note}" if note else ""
@@ -123,7 +124,7 @@ def handle_message(event):
             else:
                 reply += f"--:--:--　{boss}\n"
 
-    # 🟢 開服
+    # 🟢 開服（全部設定同時間）
     elif msg.lower().startswith("!open") and len(parts) == 2:
         time_str = parse_time(parts[1])
         if time_str:
@@ -144,7 +145,7 @@ def handle_message(event):
 
             reply = f"🟢 開服時間 {time_str}"
 
-    # ➕ 新增
+    # ➕ 新增（分鐘制）
     elif msg.lower().startswith("!add") and len(parts) >= 3:
         boss = parts[1]
         minutes = int(parts[2])
@@ -163,7 +164,22 @@ def handle_message(event):
             )
 
         conn.commit()
-        reply = f"✅ 新增 {boss}"
+        reply = f"✅ 新增 {boss}（{minutes}分）"
+
+    # ✏️ 修改時間
+    elif msg.lower().startswith("!edit") and len(parts) == 3:
+        boss = get_boss_id(parts[1])
+        if boss:
+            minutes = int(parts[2])
+            respawn = minutes * 60
+
+            cursor.execute(
+                "UPDATE bosses SET respawn=? WHERE id=?",
+                (respawn, boss)
+            )
+            conn.commit()
+
+            reply = f"✏️ 修改 {boss} → {minutes}分"
 
     # ❌ 刪除
     elif msg.lower().startswith("!del") and len(parts) == 2:
@@ -172,24 +188,29 @@ def handle_message(event):
             cursor.execute("DELETE FROM bosses WHERE id=?", (boss,))
             cursor.execute("DELETE FROM aliases WHERE boss_id=?", (boss,))
             conn.commit()
+
             reply = f"🗑 刪除 {boss}"
 
-    # 💀 即時死亡
+    # 💀 即時死亡（含備註）
     elif parts and parts[0] == "6666" and len(parts) >= 2:
         boss = get_boss_id(parts[1])
         if boss:
+            note = " ".join(parts[2:]) if len(parts) > 2 else ""
             now_time = now.strftime("%Y-%m-%d %H:%M:%S")
+
             cursor.execute(
-                "UPDATE bosses SET last_kill=? WHERE id=?",
-                (now_time, boss)
+                "UPDATE bosses SET last_kill=?, note=? WHERE id=?",
+                (now_time, note, boss)
             )
             conn.commit()
-            reply = f"💀 {boss} 已記錄"
 
-    # ⏱ 手動時間（🔥 修正關鍵）
+            reply = f"💀 {boss} 已記錄｜{note}"
+
+    # ⏱ 手動時間（含備註）
     elif any(parse_time(p) for p in parts):
         boss = None
         time_str = None
+        note_parts = []
 
         for p in parts:
             if parse_time(p):
@@ -198,8 +219,12 @@ def handle_message(event):
                 b = get_boss_id(p)
                 if b:
                     boss = b
+                else:
+                    note_parts.append(p)
 
         if boss and time_str:
+            note = " ".join(note_parts)
+
             input_time = datetime.strptime(time_str, "%H:%M:%S")
             input_time = now.replace(
                 hour=input_time.hour,
@@ -207,20 +232,21 @@ def handle_message(event):
                 second=input_time.second
             )
 
+            # 🔥 未來時間自動往前一天（修正過1 bug）
             if input_time > now:
                 input_time -= timedelta(days=1)
 
             full_time = input_time.strftime("%Y-%m-%d %H:%M:%S")
 
             cursor.execute(
-                "UPDATE bosses SET last_kill=? WHERE id=?",
-                (full_time, boss)
+                "UPDATE bosses SET last_kill=?, note=? WHERE id=?",
+                (full_time, note, boss)
             )
             conn.commit()
 
-            reply = f"💀 {boss} 已記錄 {time_str}"
+            reply = f"💀 {boss} 已記錄 {time_str}｜{note}"
 
-    # 🔥 沒命中 → 不回
+    # 🔕 沒命中 → 不回
     if reply:
         line_bot_api.reply_message(
             event.reply_token,
