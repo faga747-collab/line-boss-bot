@@ -6,13 +6,16 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import sqlite3
 from datetime import datetime, timedelta
 import pytz
+import os
 
 app = Flask(__name__)
+
 @app.route("/")
 def home():
     return "OK"
-LINE_CHANNEL_ACCESS_TOKEN = "gdsj6TwRFERmBblRf/HvzltxF96+hBJtHei+v5HgW91EQTcoh/sDtv7JZHd7Kk9XZB84ziADfThuaMJzB/I4/xUYS6b79qB9OjskQknw5Ncf1dQxRzJXnHInwY9aCZIIuu1IjfXEOdFWXP6fARJUngdB04t89/1O/w1cDnyilFU="
-LINE_CHANNEL_SECRET = "fec2f3302c8532f6966618ffe12464c7"
+
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -20,6 +23,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 tz = pytz.timezone("Asia/Taipei")
 
 conn = sqlite3.connect("boss.db", check_same_thread=False)
+conn.execute("PRAGMA journal_mode=WAL;")
 cursor = conn.cursor()
 
 # 建表
@@ -63,13 +67,17 @@ def parse_time(text):
 
 @app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers.get('X-Line-Signature', '')
     body = request.get_data(as_text=True)
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        print("❌ 簽名錯誤")
         abort(400)
+    except Exception as e:
+        print("🔥 錯誤:", e)
+        return 'OK'
 
     return 'OK'
 
@@ -79,7 +87,7 @@ def handle_message(event):
     parts = msg.split()
     now = datetime.now(tz)
 
-    reply = None  # 🔥 不亂回
+    reply = None
 
     # 📖 指令
     if msg.lower() in ["查詢", "help"]:
@@ -87,22 +95,25 @@ def handle_message(event):
 
 查詢
 出
-0900 王名 備註
+時間 王名 備註
 6666 王名 備註
-!open 0900
+!open 開服時間
 !add 王名 分鐘 別名
 !edit 王名 分鐘
 !del 王名
 """
 
-    # 📋 查詢
+    # 📋 查詢（🔥 時間排序）
     elif msg == "出":
         cursor.execute("SELECT * FROM bosses")
         rows = cursor.fetchall()
 
-        reply = "📋 王表\n時間　　 王名稱\n----------------\n"
+        boss_list = []
 
         for boss, respawn, last_kill, note in rows:
+            next_time = None
+            count = 0
+
             if last_kill:
                 last_time = datetime.strptime(last_kill, "%Y-%m-%d %H:%M:%S")
                 last_time = tz.localize(last_time)
@@ -110,14 +121,23 @@ def handle_message(event):
                 diff = (now - last_time).total_seconds()
                 count = int(diff // respawn)
 
-                next_time = last_time + timedelta(seconds=(count + 1) * respawn)
-
-                # 🔥 修正：未來時間不顯示過X
                 if count < 0:
                     count = 0
 
+                next_time = last_time + timedelta(seconds=(count + 1) * respawn)
+
+            boss_list.append((boss, respawn, last_kill, note, next_time, count))
+
+        # 🔥 只照時間排序
+        boss_list.sort(key=lambda x: (x[4] is None, x[4]))
+
+        reply = "📋 王表\n時間　　 王名稱\n----------------\n"
+
+        for boss, respawn, last_kill, note, next_time, count in boss_list:
+            note_text = f"｜{note}" if note else ""
+
+            if next_time:
                 time_str = next_time.strftime("%H:%M:%S")
-                note_text = f"｜{note}" if note else ""
 
                 if count == 0:
                     reply += f"{time_str}　{boss}{note_text}\n"
@@ -126,9 +146,10 @@ def handle_message(event):
             else:
                 reply += f"--:--:--　{boss}\n"
 
-    # 🟢 開服（全部設定同時間）
+    # 🟢 開服
     elif msg.lower().startswith("!open") and len(parts) == 2:
         time_str = parse_time(parts[1])
+
         if time_str:
             input_time = datetime.strptime(time_str, "%H:%M:%S")
             input_time = now.replace(
@@ -139,15 +160,14 @@ def handle_message(event):
 
             full_time = input_time.strftime("%Y-%m-%d %H:%M:%S")
 
-            cursor.execute(
-                "UPDATE bosses SET last_kill=?, note=NULL",
-                (full_time,)
-            )
+            cursor.execute("UPDATE bosses SET last_kill=?, note=NULL", (full_time,))
             conn.commit()
 
             reply = f"🟢 開服時間 {time_str}"
+        else:
+            reply = "❌ 時間格式錯誤"
 
-    # ➕ 新增（分鐘制）
+    # ➕ 新增
     elif msg.lower().startswith("!add") and len(parts) >= 3:
         boss = parts[1]
         minutes = int(parts[2])
@@ -168,9 +188,10 @@ def handle_message(event):
         conn.commit()
         reply = f"✅ 新增 {boss}（{minutes}分）"
 
-    # ✏️ 修改時間
+    # ✏️ 修改
     elif msg.lower().startswith("!edit") and len(parts) == 3:
         boss = get_boss_id(parts[1])
+
         if boss:
             minutes = int(parts[2])
             respawn = minutes * 60
@@ -182,20 +203,26 @@ def handle_message(event):
             conn.commit()
 
             reply = f"✏️ 修改 {boss} → {minutes}分"
+        else:
+            reply = "❌ 找不到王"
 
     # ❌ 刪除
     elif msg.lower().startswith("!del") and len(parts) == 2:
         boss = get_boss_id(parts[1])
+
         if boss:
             cursor.execute("DELETE FROM bosses WHERE id=?", (boss,))
             cursor.execute("DELETE FROM aliases WHERE boss_id=?", (boss,))
             conn.commit()
 
             reply = f"🗑 刪除 {boss}"
+        else:
+            reply = "❌ 找不到王"
 
-    # 💀 即時死亡（含備註）
+    # 💀 即時死亡
     elif parts and parts[0] == "6666" and len(parts) >= 2:
         boss = get_boss_id(parts[1])
+
         if boss:
             note = " ".join(parts[2:]) if len(parts) > 2 else ""
             now_time = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -207,8 +234,10 @@ def handle_message(event):
             conn.commit()
 
             reply = f"💀 {boss} 已記錄｜{note}"
+        else:
+            reply = "❌ 找不到王"
 
-    # ⏱ 手動時間（含備註）
+    # ⏱ 手動時間
     elif any(parse_time(p) for p in parts):
         boss = None
         time_str = None
@@ -234,7 +263,6 @@ def handle_message(event):
                 second=input_time.second
             )
 
-            # 🔥 未來時間自動往前一天（修正過1 bug）
             if input_time > now:
                 input_time -= timedelta(days=1)
 
@@ -247,8 +275,10 @@ def handle_message(event):
             conn.commit()
 
             reply = f"💀 {boss} 已記錄 {time_str}｜{note}"
+        else:
+            reply = "❌ 格式錯誤或找不到王"
 
-    # 🔕 沒命中 → 不回
+    # 🔕 回覆
     if reply:
         line_bot_api.reply_message(
             event.reply_token,
@@ -256,4 +286,5 @@ def handle_message(event):
         )
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
