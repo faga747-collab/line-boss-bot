@@ -138,7 +138,6 @@ def handle_message(event):
 
     reply = None
 
-    # 指令
     if msg.lower() in ["查詢", "help"]:
         reply = """📖 指令
 
@@ -158,14 +157,15 @@ def handle_message(event):
         conn.commit()
         reply = "🧹 已清除所有王的時間"
 
-    # ⭐ 查詢（含重點王🔥）
-    elif msg == "出":
+    # ⭐ 這裡是唯一改動的地方
+    elif msg.lower() in ["出", "o"]:
         priority_bosses = ["不死鳥", "05死騎", "78古巨"]
 
         cursor.execute("SELECT * FROM bosses")
         rows = cursor.fetchall()
 
         boss_list = []
+        overdue_30 = []
 
         for boss, respawn, last_kill, note in rows:
             next_time = None
@@ -182,11 +182,29 @@ def handle_message(event):
 
                 next_time = last_time + timedelta(seconds=(count + 1) * respawn)
 
-            boss_list.append((boss, respawn, last_kill, note, next_time, count))
+            if next_time:
+                diff_sec = (now - next_time).total_seconds()
+
+                if 0 < diff_sec <= 1800:
+                    overdue_30.append((boss, respawn, last_kill, note, next_time, count))
+                else:
+                    boss_list.append((boss, respawn, last_kill, note, next_time, count))
 
         boss_list.sort(key=lambda x: (x[4] is None, x[4]))
 
         reply = "📋 王表\n時間　　 王名稱\n----------------\n"
+
+        # 🔴 逾時30分鐘內
+        if overdue_30:
+            overdue_30.sort(key=lambda x: x[4])
+
+            for boss, respawn, last_kill, note, next_time, count in overdue_30:
+                note_text = f"｜{note}" if note else ""
+                time_str = next_time.strftime("%H:%M:%S")
+
+                reply += f"🔴{time_str}　{boss}（過{count}）{note_text}\n"
+
+            reply += "－－逾時30分鐘內未打－－\n"
 
         for boss, respawn, last_kill, note, next_time, count in boss_list:
             if not next_time:
