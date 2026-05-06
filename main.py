@@ -115,6 +115,42 @@ def parse_time(text):
             return f"{text[:2]}:{text[2:4]}:00"
     return None
 
+# ⭐ 新增：支援日期 + 時間
+def parse_datetime(parts, now):
+    try:
+        if len(parts) == 2:
+            time_str = parse_time(parts[1])
+            if not time_str:
+                return None
+
+            t = datetime.strptime(time_str, "%H:%M:%S")
+            return now.replace(hour=t.hour, minute=t.minute, second=t.second)
+
+        elif len(parts) >= 3:
+            date_part = parts[1]
+            time_part = parse_time(parts[2])
+
+            if not time_part:
+                return None
+
+            if "-" in date_part:
+                d = datetime.strptime(date_part, "%Y-%m-%d")
+            else:
+                d = datetime.strptime(date_part, "%Y%m%d")
+
+            t = datetime.strptime(time_part, "%H:%M:%S")
+
+            return datetime(
+                year=d.year,
+                month=d.month,
+                day=d.day,
+                hour=t.hour,
+                minute=t.minute,
+                second=t.second
+            )
+    except:
+        return None
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -157,7 +193,6 @@ def handle_message(event):
         conn.commit()
         reply = "🧹 已清除所有王的時間"
 
-    # ⭐ 這裡是唯一改動的地方
     elif msg.lower() in ["出", "o"]:
         priority_bosses = ["不死鳥", "05死騎", "78古巨"]
 
@@ -194,7 +229,6 @@ def handle_message(event):
 
         reply = "📋 王表\n時間　　 王名稱\n----------------\n"
 
-        # 🔴 逾時30分鐘內
         if overdue_30:
             overdue_30.sort(key=lambda x: x[4])
 
@@ -220,23 +254,17 @@ def handle_message(event):
             else:
                 reply += f"{icon}{time_str}　{boss}（過{count}）{note_text}\n"
 
-    elif msg.lower().startswith("!open") and len(parts) == 2:
-        time_str = parse_time(parts[1])
+    # ⭐ 已升級 !open（支援日期）
+    elif msg.lower().startswith("!open") and len(parts) >= 2:
+        input_time = parse_datetime(parts, now)
 
-        if time_str:
-            input_time = datetime.strptime(time_str, "%H:%M:%S")
-            input_time = now.replace(
-                hour=input_time.hour,
-                minute=input_time.minute,
-                second=input_time.second
-            )
-
+        if input_time:
             full_time = input_time.strftime("%Y-%m-%d %H:%M:%S")
 
             cursor.execute("UPDATE bosses SET last_kill=?, note=NULL", (full_time,))
             conn.commit()
 
-            reply = f"🟢 開服時間 {time_str}"
+            reply = f"🟢 開服時間 {full_time}"
         else:
             reply = "❌ 時間格式錯誤"
 
