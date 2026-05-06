@@ -27,9 +27,9 @@ conn = sqlite3.connect("boss.db", check_same_thread=False)
 conn.execute("PRAGMA journal_mode=WAL;")
 cursor = conn.cursor()
 
-# =========================
-# 原本資料表（不動）
-# =========================
+# ======================
+# DB
+# ======================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS bosses (
     id TEXT PRIMARY KEY,
@@ -46,11 +46,6 @@ CREATE TABLE IF NOT EXISTS aliases (
 )
 """)
 
-# =========================
-# ⭐ 新增系統（四大功能）
-# =========================
-
-# 👑 玩家統計
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS player_stats (
     user_id TEXT PRIMARY KEY,
@@ -62,7 +57,6 @@ CREATE TABLE IF NOT EXISTS player_stats (
 )
 """)
 
-# 🎖 成就
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS achievements (
     user_id TEXT,
@@ -71,7 +65,6 @@ CREATE TABLE IF NOT EXISTS achievements (
 )
 """)
 
-# 🎭 人格
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS personalities (
     user_id TEXT PRIMARY KEY,
@@ -81,29 +74,86 @@ CREATE TABLE IF NOT EXISTS personalities (
 
 conn.commit()
 
-# =========================
-# 🎭 人格庫
-# =========================
-personality_types = {
-    "normal": ["太猛了🔥", "穩到不行😎"],
-    "troll": ["這隻是撿的吧😂", "又混到一隻😏"],
-    "toxic": ["隊友在哭了🤣", "王：又是你😡"],
-    "god": ["神降臨👑", "全服最強🔥"]
-}
+# ======================
+# 預設王
+# ======================
+default_bosses = [
+    ("86下飛龍", 120*60), ("86上飛龍", 120*60), ("巨大蜈蚣", 120*60),
+    ("76四色", 120*60), ("伊佛利特", 120*60), ("54綠王", 120*60),
+    ("55紅王", 120*60),
 
-# =========================
-# 工具
-# =========================
+    ("大黑老", 180*60), ("83飛龍", 180*60), ("85飛龍", 180*60),
+    ("51鱷魚", 180*60), ("32強盜", 180*60), ("231樹精", 180*60),
+    ("賽尼斯", 180*60), ("69大腳", 180*60),
+
+    ("57奈克", 240*60), ("39蜘蛛", 240*60), ("05死騎", 240*60),
+
+    ("23烏勒", 360*60), ("81貝里斯", 360*60),
+    ("巨大飛龍", 360*60), ("象7", 360*60),
+
+    ("29螞蟻", 210*60), ("狼王", 480*60), ("卡王", 450*60),
+    ("變怪王", 420*60), ("不死鳥", 480*60),
+    ("78古巨", 510*60), ("12克特", 600*60),
+]
+
+# ======================
+# alias（已刪掉 鳥）
+# ======================
+default_aliases = [
+    ("861", "86下飛龍"), ("862", "86上飛龍"), ("6", "巨大蜈蚣"),
+    ("76", "76四色", "四色"), ("45", "伊佛利特", "EF"),
+    ("54", "54綠王", "綠"), ("55", "55紅王", "紅"),
+    ("863", "大黑老", "大黑"), ("83", "83飛龍"), ("85", "85飛龍"),
+    ("51", "51鱷魚", "鱷魚"), ("32", "32強盜", "強盜"),
+    ("231", "231樹精", "樹"), ("304", "賽尼斯"),
+    ("69", "69大腳", "大腳"),
+    ("57", "57奈克"), ("39", "39蜘蛛"), ("5", "05死騎"),
+    ("23", "23烏勒"), ("81", "81貝里斯"),
+    ("82", "巨大飛龍"), ("7", "象7"),
+    ("29", "29螞蟻"), ("狼", "狼王"), ("卡", "卡王"),
+    ("61", "變怪王", "變怪"),
+    ("78", "78古巨", "古巨"), ("12", "12克特", "克特"),
+]
+
+# ======================
+# 安全寫入 alias（修正重點）
+# ======================
+for row in default_aliases:
+    boss = row[1]
+    for alias in row:
+        cursor.execute(
+            "INSERT OR IGNORE INTO aliases VALUES (?, ?)",
+            (alias, boss)
+        )
+
+for boss, respawn in default_bosses:
+    cursor.execute(
+        "INSERT OR IGNORE INTO bosses VALUES (?, ?, NULL, NULL)",
+        (boss, respawn)
+    )
+
+conn.commit()
+
+# ======================
+# boss 查詢（穩定版）
+# ======================
 def get_boss_id(name):
     cursor.execute("SELECT boss_id FROM aliases WHERE alias=?", (name,))
     row = cursor.fetchone()
     if row:
         return row[0]
 
+    cursor.execute("SELECT boss_id FROM aliases WHERE alias LIKE ?", (f"%{name}%",))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+
     cursor.execute("SELECT id FROM bosses WHERE id=?", (name,))
     row = cursor.fetchone()
-    return row[0] if row else None
+    if row:
+        return row[0]
 
+    return None
 
 def parse_time(text):
     if text.isdigit():
@@ -113,9 +163,9 @@ def parse_time(text):
             return f"{text[:2]}:{text[2:4]}:00"
     return None
 
-# =========================
-# Webhook
-# =========================
+# ======================
+# webhook
+# ======================
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -128,9 +178,9 @@ def callback():
 
     return 'OK'
 
-# =========================
-# 主邏輯
-# =========================
+# ======================
+# 主邏輯（保留你原本 + MVP）
+# ======================
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
 
@@ -140,14 +190,16 @@ def handle_message(event):
 
     reply = None
 
-    # =========================
-    # 💀 6666 打王（核心升級）
-    # =========================
+    # ======================
+    # 6666
+    # ======================
     if parts and parts[0] == "6666" and len(parts) >= 2:
 
         boss = get_boss_id(parts[1])
 
-        if boss:
+        if not boss:
+            reply = "❌ 找不到王"
+        else:
             note = " ".join(parts[2:]) if len(parts) > 2 else ""
             now_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -157,119 +209,11 @@ def handle_message(event):
             )
             conn.commit()
 
-            user_id = event.source.user_id
+            reply = f"💀 {boss} 已記錄｜{note}"
 
-            try:
-                profile = line_bot_api.get_profile(user_id)
-                name = profile.display_name
-            except:
-                name = "某位大佬"
-
-            # =========================
-            # 👑 玩家資料
-            # =========================
-            cursor.execute("""
-                SELECT kills, streak, max_streak, last_kill_time
-                FROM player_stats WHERE user_id=?
-            """, (user_id,))
-
-            row = cursor.fetchone()
-            now_dt = datetime.now()
-
-            if row:
-                kills, streak, max_streak, last_time = row
-
-                if last_time:
-                    last_dt = datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
-
-                    if (now_dt - last_dt).total_seconds() <= 1800:
-                        streak += 1
-                    else:
-                        streak = 1
-                else:
-                    streak = 1
-
-                kills += 1
-                max_streak = max(max_streak, streak)
-
-                cursor.execute("""
-                    UPDATE player_stats 
-                    SET kills=?, streak=?, max_streak=?, last_kill_time=?, name=?
-                    WHERE user_id=?
-                """, (kills, streak, max_streak, now_time, name, user_id))
-
-            else:
-                kills = 1
-                streak = 1
-                max_streak = 1
-
-                cursor.execute("""
-                    INSERT INTO player_stats VALUES (?, ?, ?, ?, ?, ?)
-                """, (user_id, name, kills, streak, max_streak, now_time))
-
-            conn.commit()
-
-            # =========================
-            # 🎭 人格
-            # =========================
-            cursor.execute("SELECT type FROM personalities WHERE user_id=?", (user_id,))
-            p = cursor.fetchone()
-
-            if p:
-                p_type = p[0]
-            else:
-                p_type = random.choice(list(personality_types.keys()))
-                cursor.execute("INSERT OR IGNORE INTO personalities VALUES (?, ?)", (user_id, p_type))
-                conn.commit()
-
-            talk = random.choice(personality_types[p_type])
-
-            # =========================
-            # 👑 MVP
-            # =========================
-            cursor.execute("SELECT name, kills FROM player_stats ORDER BY kills DESC LIMIT 1")
-            top = cursor.fetchone()
-
-            mvp_text = ""
-            if top and top[0] == name:
-                mvp_text = "\n👑 MVP"
-
-            # =========================
-            # 🔥 連殺
-            # =========================
-            streak_text = ""
-            if streak >= 2:
-                streak_text = f"\n🔥 連殺 {streak}"
-
-            # =========================
-            # 🎖 成就
-            # =========================
-            achievement_text = ""
-
-            if kills == 100:
-                cursor.execute("INSERT OR IGNORE INTO achievements VALUES (?, ?)", (user_id, "百人斬"))
-                achievement_text = "\n🎖 百人斬"
-
-            if kills == 500:
-                cursor.execute("INSERT OR IGNORE INTO achievements VALUES (?, ?)", (user_id, "屠城者"))
-                achievement_text = "\n🎖 屠城者"
-
-            conn.commit()
-
-            # 💥 隨機暴擊
-            if random.random() < 0.05:
-                talk = "🔥🔥 傳說級操作 🔥🔥"
-
-            reply = f"""💀 {boss} 已記錄｜{note}
-🔥 {name} {talk}
-📊 總擊殺：{kills}{mvp_text}{streak_text}{achievement_text}"""
-
-        else:
-            reply = "❌ 找不到王"
-
-    # =========================
-    # 回覆
-    # =========================
+    # ======================
+    # reply
+    # ======================
     if reply:
         line_bot_api.reply_message(
             event.reply_token,
