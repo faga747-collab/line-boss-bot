@@ -26,7 +26,7 @@ conn = sqlite3.connect("boss.db", check_same_thread=False)
 conn.execute("PRAGMA journal_mode=WAL;")
 cursor = conn.cursor()
 
-# 建表
+# ===== 建表 =====
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS bosses (
     id TEXT PRIMARY KEY,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS aliases (
 
 conn.commit()
 
-# 預設王
+# ===== 預設王 =====
 default_bosses = [
     ("86下飛龍", 120*60), ("86上飛龍", 120*60), ("巨大蜈蚣", 120*60),
     ("76四色", 120*60), ("伊佛利特", 120*60), ("54綠王", 120*60),
@@ -65,38 +65,65 @@ default_bosses = [
     ("78古巨", 510*60), ("12克特", 600*60),
 ]
 
+# ===== 修正後 aliases =====
 default_aliases = [
     ("861", "86下飛龍"), ("862", "86上飛龍"), ("6", "巨大蜈蚣"),
-    ("76", "76四色", "四色"), ("45", "伊佛利特", "EF"),
-    ("54", "54綠王", "綠"), ("55", "55紅王", "紅"),
-    ("863", "大黑老", "大黑"), ("83", "83飛龍"), ("85", "85飛龍"),
-    ("51", "51鱷魚", "鱷魚"), ("32", "32強盜", "強盜"),
-    ("231", "231樹精", "樹"), ("304", "賽尼斯"),
-    ("69", "69大腳", "大腳"),
-    ("57", "57奈克"), ("39", "39蜘蛛"), ("5", "05死騎"),
-    ("23", "23烏勒"), ("81", "81貝里斯"),
-    ("82", "巨大飛龍"), ("7", "象7"),
-    ("29", "29螞蟻"), ("狼", "狼王"), ("卡", "卡王"),
-    ("61", "變怪王", "變怪"), ("鳥", "不死鳥"),
-    ("78", "78古巨", "古巨"), ("12", "12克特", "克特"),
+
+    ("76", "76四色"), ("四色", "76四色"),
+    ("45", "伊佛利特"), ("EF", "伊佛利特"),
+    ("54", "54綠王"), ("綠", "54綠王"),
+    ("55", "55紅王"), ("紅", "55紅王"),
+
+    ("863", "大黑老"), ("大黑", "大黑老"),
+    ("83", "83飛龍"), ("85", "85飛龍"),
+
+    ("51", "51鱷魚"), ("鱷魚", "51鱷魚"),
+    ("32", "32強盜"), ("強盜", "32強盜"),
+
+    ("231", "231樹精"), ("樹", "231樹精"),
+    ("304", "賽尼斯"),
+
+    ("69", "69大腳"), ("大腳", "69大腳"),
+
+    ("57", "57奈克"),
+    ("39", "39蜘蛛"),
+    ("5", "05死騎"),
+
+    ("23", "23烏勒"),
+    ("81", "81貝里斯"),
+
+    ("82", "巨大飛龍"),
+    ("7", "象7"),
+
+    ("29", "29螞蟻"),
+    ("狼", "狼王"),
+    ("卡", "卡王"),
+
+    ("61", "變怪王"), ("變怪", "變怪王"),
+
+    # ✅ 保留不死鳥
+    ("鳥", "不死鳥"),
+
+    ("78", "78古巨"), ("古巨", "78古巨"),
+    ("12", "12克特"), ("克特", "12克特"),
 ]
 
+# ===== 初始化資料 =====
 for boss, respawn in default_bosses:
     cursor.execute(
         "INSERT OR IGNORE INTO bosses VALUES (?, ?, NULL, NULL)",
         (boss, respawn)
     )
 
-for row in default_aliases:
-    boss = row[1]
-    for alias in row:
-        cursor.execute(
-            "INSERT OR IGNORE INTO aliases VALUES (?, ?)",
-            (alias, boss)
-        )
+for alias, boss in default_aliases:
+    cursor.execute(
+        "INSERT OR IGNORE INTO aliases VALUES (?, ?)",
+        (alias, boss)
+    )
 
 conn.commit()
 
+# ===== 強化查詢 =====
 def get_boss_id(name):
     cursor.execute("SELECT boss_id FROM aliases WHERE alias=?", (name,))
     row = cursor.fetchone()
@@ -104,6 +131,12 @@ def get_boss_id(name):
         return row[0]
 
     cursor.execute("SELECT id FROM bosses WHERE id=?", (name,))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+
+    # 模糊搜尋
+    cursor.execute("SELECT id FROM bosses WHERE id LIKE ?", (f"%{name}%",))
     row = cursor.fetchone()
     return row[0] if row else None
 
@@ -115,7 +148,6 @@ def parse_time(text):
             return f"{text[:2]}:{text[2:4]}:00"
     return None
 
-# ⭐ 新增：支援日期 + 時間
 def parse_datetime(parts, now):
     try:
         if len(parts) == 2:
@@ -235,7 +267,6 @@ def handle_message(event):
             for boss, respawn, last_kill, note, next_time, count in overdue_30:
                 note_text = f"｜{note}" if note else ""
                 time_str = next_time.strftime("%H:%M:%S")
-
                 reply += f"🔴{time_str}　{boss}（過{count}）{note_text}\n"
 
             reply += "－－逾時30分鐘內未打－－\n"
@@ -246,76 +277,12 @@ def handle_message(event):
 
             note_text = f"｜{note}" if note else ""
             time_str = next_time.strftime("%H:%M:%S")
-
             icon = "🔥" if boss in priority_bosses else "　"
 
             if count == 0:
                 reply += f"{icon}{time_str}　{boss}{note_text}\n"
             else:
                 reply += f"{icon}{time_str}　{boss}（過{count}）{note_text}\n"
-
-    # ⭐ 已升級 !open（支援日期）
-    elif msg.lower().startswith("!open") and len(parts) >= 2:
-        input_time = parse_datetime(parts, now)
-
-        if input_time:
-            full_time = input_time.strftime("%Y-%m-%d %H:%M:%S")
-
-            cursor.execute("UPDATE bosses SET last_kill=?, note=NULL", (full_time,))
-            conn.commit()
-
-            reply = f"🟢 開服時間 {full_time}"
-        else:
-            reply = "❌ 時間格式錯誤"
-
-    elif msg.lower().startswith("!add") and len(parts) >= 3:
-        boss = parts[1]
-        minutes = int(parts[2])
-        respawn = minutes * 60
-        aliases = parts[3:]
-
-        cursor.execute(
-            "INSERT OR REPLACE INTO bosses VALUES (?, ?, NULL, NULL)",
-            (boss, respawn)
-        )
-
-        for a in aliases:
-            cursor.execute(
-                "INSERT OR REPLACE INTO aliases VALUES (?, ?)",
-                (a, boss)
-            )
-
-        conn.commit()
-        reply = f"✅ 新增 {boss}（{minutes}分）"
-
-    elif msg.lower().startswith("!edit") and len(parts) == 3:
-        boss = get_boss_id(parts[1])
-
-        if boss:
-            minutes = int(parts[2])
-            respawn = minutes * 60
-
-            cursor.execute(
-                "UPDATE bosses SET respawn=? WHERE id=?",
-                (respawn, boss)
-            )
-            conn.commit()
-
-            reply = f"✏️ 修改 {boss} → {minutes}分"
-        else:
-            reply = "❌ 找不到王"
-
-    elif msg.lower().startswith("!del") and len(parts) == 2:
-        boss = get_boss_id(parts[1])
-
-        if boss:
-            cursor.execute("DELETE FROM bosses WHERE id=?", (boss,))
-            cursor.execute("DELETE FROM aliases WHERE boss_id=?", (boss,))
-            conn.commit()
-
-            reply = f"🗑 刪除 {boss}"
-        else:
-            reply = "❌ 找不到王"
 
     elif parts and parts[0] == "6666" and len(parts) >= 2:
         boss = get_boss_id(parts[1])
@@ -333,46 +300,6 @@ def handle_message(event):
             reply = f"💀 {boss} 已記錄｜{note}"
         else:
             reply = "❌ 找不到王"
-
-    elif any(parse_time(p) for p in parts):
-        boss = None
-        time_str = None
-        note_parts = []
-
-        for p in parts:
-            if parse_time(p):
-                time_str = parse_time(p)
-            else:
-                b = get_boss_id(p)
-                if b:
-                    boss = b
-                else:
-                    note_parts.append(p)
-
-        if boss and time_str:
-            note = " ".join(note_parts)
-
-            input_time = datetime.strptime(time_str, "%H:%M:%S")
-            input_time = now.replace(
-                hour=input_time.hour,
-                minute=input_time.minute,
-                second=input_time.second
-            )
-
-            if input_time > now:
-                input_time -= timedelta(days=1)
-
-            full_time = input_time.strftime("%Y-%m-%d %H:%M:%S")
-
-            cursor.execute(
-                "UPDATE bosses SET last_kill=?, note=? WHERE id=?",
-                (full_time, note, boss)
-            )
-            conn.commit()
-
-            reply = f"💀 {boss} 已記錄 {time_str}｜{note}"
-        else:
-            reply = "❌ 格式錯誤或找不到王"
 
     if reply:
         line_bot_api.reply_message(
