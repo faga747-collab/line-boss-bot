@@ -4,7 +4,6 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 import psycopg2
-from psycopg2 import pool
 from datetime import datetime, timedelta
 import pytz
 import os
@@ -25,44 +24,57 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 tz = pytz.timezone("Asia/Taipei")
 
-# Railway 內部 DATABASE_URL，Windows 管理程式可使用 PUBLIC URL 連同一資料庫。
-# 不在程式啟動時清除任何時間；需要重新開始時用 LINE 的 !clear all。
-db_pool = None
-
-def get_pool():
-    global db_pool
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL 未設定：請在 line-boss-bot Variables 加入 Postgres.DATABASE_URL")
-    if db_pool is None:
-        db_pool = pool.ThreadedConnectionPool(1, 5, dsn=DATABASE_URL, connect_timeout=10)
-    return db_pool
-
+# 每次操作使用獨立 PostgreSQL 連線，避免重用已失效的 SSL 連線。
+# 不會清除任何王的紀錄；Windows V3 仍使用相同 PostgreSQL 資料庫。
 class DB:
+    def __init__(self):
+        self.conn = None
+        self.cursor = None
+
     def __enter__(self):
-        self.p = get_pool()
-        self.conn = self.p.getconn()
+        if not DATABASE_URL:
+            raise RuntimeError("DATABASE_URL 未設定：請在 Railway Variables 設定 PostgreSQL 連線")
+
+        self.conn = psycopg2.connect(
+            dsn=DATABASE_URL,
+            connect_timeout=10,
+            application_name="line-boss-bot",
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+        )
         try:
-            if self.conn.closed:
-                self.p.putconn(self.conn, close=True)
-                self.conn = self.p.getconn()
-            self.conn.rollback()  # 清除先前可能留下的失敗交易
             self.cursor = self.conn.cursor()
             return self.cursor
         except Exception:
-            self.p.putconn(self.conn, close=True)
+            self.conn.close()
             raise
 
-    def __exit__(self, typ, value, tb):
+    def __exit__(self, exc_type, exc_value, traceback):
         try:
-            if typ is None:
+            if exc_type is None:
                 self.conn.commit()
-            else:
-                self.conn.rollback()
+            elif not self.conn.closed:
+                try:
+                    self.conn.rollback()
+                except psycopg2.Error:
+                    app.logger.exception("PostgreSQL rollback 失敗（可能已斷線）")
         finally:
-            self.cursor.close()
-            self.p.putconn(self.conn, close=bool(self.conn.closed))
+            if self.cursor is not None:
+                try:
+                    self.cursor.close()
+                except psycopg2.Error:
+                    pass
+            if self.conn is not None:
+                try:
+                    self.conn.close()
+                except psycopg2.Error:
+                    pass
+        return False
 
-# 預設王：完全保留原本名稱與秒數
+# 預設王：保留原本名稱與秒數
+# ON CONFLICT DO NOTHING，不會覆蓋已存在的 last_kill / note。
 default_bosses = [
     ("86下飛龍", 120*60), ("86上飛龍", 120*60), ("巨大蜈蚣", 120*60),
     ("76四色", 120*60), ("伊佛利特", 120*60), ("54綠王", 120*60),
@@ -118,14 +130,12 @@ def init_db():
             """, (boss, respawn))
         for row in default_aliases:
             boss = row[1]
-            for alias in row:  # 保留原始程式行為：王本名也可以當別名
+            for alias in row:
                 cursor.execute("""
                     INSERT INTO aliases (alias, boss_id) VALUES (%s, %s)
                     ON CONFLICT (alias) DO NOTHING
                 """, (alias, boss))
 
-# 初始化失敗不阻止 Flask 的 /callback 路由註冊，避免變成 404。
-# 資料庫若暫時故障，之後的請求會重新嘗試初始化。
 _db_ready = False
 
 def ensure_db():
@@ -154,7 +164,6 @@ def parse_time(text):
             return f"{text[:2]}:{text[2:4]}:00"
     return None
 
-# ⭐ 新增：支援日期 + 時間
 def parse_datetime(parts, now):
     try:
         if len(parts) == 2:
